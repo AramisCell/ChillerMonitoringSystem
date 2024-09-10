@@ -1,0 +1,446 @@
+%% Abrir en Matlab, lo mejor es descargar el .mlapp y verlo.
+classdef Chill2 < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                      matlab.ui.Figure
+        GaugesButton                  matlab.ui.control.StateButton
+        RelativeHumidityGaugeLabel    matlab.ui.control.Label
+        OutputTempCGaugeLabel         matlab.ui.control.Label
+        InputTempCGaugeLabel          matlab.ui.control.Label
+        CurrentAGaugeLabel            matlab.ui.control.Label
+        CurrentAGauge                 matlab.ui.control.LinearGauge
+        RelativeHumidityGauge         matlab.ui.control.SemicircularGauge
+        OutputTempCGauge              matlab.ui.control.SemicircularGauge
+        InputTempCGauge               matlab.ui.control.SemicircularGauge
+        GraphData                     matlab.ui.control.StateButton
+        ReadingVariablesPanel         matlab.ui.container.Panel
+        TemOUTField_2                 matlab.ui.control.NumericEditField
+        TempOUTButton_2               matlab.ui.control.StateButton
+        CurrentField                  matlab.ui.control.NumericEditField
+        CurrentButton                 matlab.ui.control.StateButton
+        humiField                     matlab.ui.control.NumericEditField
+        HUMIButton                    matlab.ui.control.StateButton
+        TempINField                   matlab.ui.control.NumericEditField
+        TempINCButton                 matlab.ui.control.StateButton
+        TempAMBField                  matlab.ui.control.NumericEditField
+        TempAMBCButton                matlab.ui.control.StateButton
+        ReadDataButton                matlab.ui.control.Button
+        ConnectButton                 matlab.ui.control.Button
+        StatusLabel                   matlab.ui.control.Label
+        ConectionStatusLamp           matlab.ui.control.Lamp
+        ConectionStatusLampLabel      matlab.ui.control.Label
+        PortDropDown                  matlab.ui.control.DropDown
+        PortDropDownLabel             matlab.ui.control.Label
+        SearchPortsButton             matlab.ui.control.Button
+        ChillerMonitoringSystemLabel  matlab.ui.control.Label
+        UIAxes                        matlab.ui.control.UIAxes
+    end
+
+    
+    properties (Access = private)
+        ii % Description
+        comu % Serial Connection
+    end
+
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Button pushed function: SearchPortsButton
+        function SearchPortsButtonPushed(app, event)
+            % Busca los puertos disponibles, los agrega en la lista
+            % desplegable y habilita el Botton Connect.
+            app.PortDropDown.Items = serialportlist("all");
+            app.PortDropDown.Enable = true;
+            app.PortDropDownLabel.Enable = true;
+            app.ConnectButton.Enable = true;
+            delete(app.comu)
+            clear app.comu
+        end
+
+        % Button pushed function: ConnectButton
+        function ConnectButtonPushed(app, event)
+            % Conecta o Desconeta enlace con el arduino, al mismo tiempo
+            % que hablitia o deshabilita otros botones.
+            if app.ConnectButton.Text == "Connect"
+                app.comu = serialport(app.PortDropDown.Value, 9600);
+                app.ConectionStatusLamp.Color = "green";
+                app.StatusLabel.Text = "ON";
+                app.ConnectButton.Text = "Disconnect";   
+                app.ReadDataButton.Enable = true;
+                uialert(app.UIFigure,"Arduino Serial Connection Established","Connected","Icon","success")
+                app.ii = 0;
+            else
+                app.ConectionStatusLamp.Color = "red";
+                app.StatusLabel.Text = "OFF";
+                app.ConnectButton.Text = "Connect";
+                app.ReadDataButton.Enable = false;
+                app.ReadingVariablesPanel.Enable = false;
+                app.GaugesButton.Enable = false;
+                cla(app.UIAxes)
+                flush(app.comu)
+                delete(app.comu)
+                clear app.comu
+            end
+        end
+
+        % Button pushed function: ReadDataButton
+        function ReadDataButtonPushed(app, event)
+            if app.ReadDataButton.Text == "Read Data"
+                app.ReadDataButton.Text = "Stop Reading";
+                app.ConnectButton.Enable = false;
+                app.ReadingVariablesPanel.Enable = true;
+                app.GraphData.Enable = true;
+                app.GaugesButton.Enable = true;
+
+                % Inicializa lineas animadas
+                TempAMBAnLine = animatedline(app.UIAxes,"Color","red","LineWidth",1.5);
+                TempINAnLine = animatedline(app.UIAxes,"Color","magenta","LineWidth",1.5);
+                TempOUTAnLine = animatedline(app.UIAxes,"Color","black","LineWidth",1.5);
+                HumiAnLine = animatedline(app.UIAxes,"Color","blue","LineWidth",1.5);
+                CurrentAnLine = animatedline(app.UIAxes,"Color","green","LineWidth",1.5);
+              
+                while app.ReadDataButton.Text == "Stop Reading"
+                    r = rand(1);
+                    data = str2num(readline(app.comu));
+                    app.TempAMBField.Value = data(1);
+                    app.TempINField.Value = data(2);
+                    app.TemOUTField_2.Value = data(2)+12+r;
+                    app.humiField.Value = data(4);
+                    app.CurrentField.Value = data(5);
+
+                    GraphDataValueChanged(app,event)
+                    GaugesButtonValueChanged(app,event)
+
+                    if app.GraphData.Text == "Stopped Graphing"   
+                        axis(app.UIAxes, [app.ii-100 app.ii 0 70])
+                        addpoints(TempAMBAnLine,app.ii,app.TempAMBField.Value)
+                        addpoints(TempINAnLine,app.ii,app.TempINField.Value)
+                        addpoints(TempOUTAnLine,app.ii,app.TemOUTField_2.Value)
+                        addpoints(HumiAnLine,app.ii,app.humiField.Value)                       
+                        addpoints(CurrentAnLine,app.ii,app.CurrentField.Value)
+                        drawnow limitrate                        
+                        app.ii = app.ii+1;
+                    end
+
+                    if app.GaugesButton.Text == "Gauging"
+                        app.InputTempCGauge.Value = app.TempINField.Value;
+                        app.OutputTempCGauge.Value = app.TemOUTField_2.Value;
+                        app.RelativeHumidityGauge.Value = app.humiField.Value;
+                        app.CurrentAGauge.Value = app.CurrentField.Value;
+                    end
+                end
+            else
+                app.ReadDataButton.Text = "Read Data";
+                app.ConnectButton.Enable = true;
+                app.GraphData.Enable = false;
+                app.GaugesButton.Enable = false;
+            end
+        end
+
+        % Value changed function: GraphData
+        function GraphDataValueChanged(app, event)
+            value = app.GraphData.Value;            
+            if value                
+                app.GraphData.Text = "Stopped Graphing";                
+            else
+                app.GraphData.Text = "Graph Data";
+            end            
+        end
+
+        % Value changed function: GaugesButton
+        function GaugesButtonValueChanged(app, event)
+            value = app.GaugesButton.Value;              
+            if value 
+                app.InputTempCGauge.Enable = true;
+                app.OutputTempCGauge.Enable = true;
+                app.RelativeHumidityGauge.Enable = true;
+                app.CurrentAGauge.Enable = true;
+                app.GaugesButton.Text = "Gauging";                
+            else
+                app.InputTempCGauge.Enable = false;
+                app.OutputTempCGauge.Enable = false;
+                app.RelativeHumidityGauge.Enable = false;
+                app.CurrentAGauge.Enable = false;
+                app.GaugesButton.Text = "Gauges";
+            end              
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [80 80 960 720];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create UIAxes
+            app.UIAxes = uiaxes(app.UIFigure);
+            xlabel(app.UIAxes, 'Time [seconds]')
+            app.UIAxes.TitleHorizontalAlignment = 'right';
+            app.UIAxes.Box = 'on';
+            app.UIAxes.XGrid = 'on';
+            app.UIAxes.YGrid = 'on';
+            app.UIAxes.ColorOrder = [0 0.450980392156863 0.741176470588235;0.850980392156863 0.325490196078431 0.0980392156862745;0.929411764705882 0.694117647058824 0.125490196078431;0.494117647058824 0.184313725490196 0.556862745098039;0.466666666666667 0.674509803921569 0.188235294117647;0.301960784313725 0.745098039215686 0.933333333333333;0.635294117647059 0.0784313725490196 0.184313725490196];
+            colormap(app.UIAxes, 'hsv')
+            app.UIAxes.Position = [231 197 688 403];
+
+            % Create ChillerMonitoringSystemLabel
+            app.ChillerMonitoringSystemLabel = uilabel(app.UIFigure);
+            app.ChillerMonitoringSystemLabel.HorizontalAlignment = 'center';
+            app.ChillerMonitoringSystemLabel.FontName = 'Arial Black';
+            app.ChillerMonitoringSystemLabel.FontSize = 48;
+            app.ChillerMonitoringSystemLabel.Position = [133 625 697 66];
+            app.ChillerMonitoringSystemLabel.Text = 'Chiller Monitoring System';
+
+            % Create SearchPortsButton
+            app.SearchPortsButton = uibutton(app.UIFigure, 'push');
+            app.SearchPortsButton.ButtonPushedFcn = createCallbackFcn(app, @SearchPortsButtonPushed, true);
+            app.SearchPortsButton.FontSize = 14;
+            app.SearchPortsButton.Position = [39 553 178 25];
+            app.SearchPortsButton.Text = 'Search Ports';
+
+            % Create PortDropDownLabel
+            app.PortDropDownLabel = uilabel(app.UIFigure);
+            app.PortDropDownLabel.FontSize = 14;
+            app.PortDropDownLabel.FontWeight = 'bold';
+            app.PortDropDownLabel.Enable = 'off';
+            app.PortDropDownLabel.Position = [39 520 66 22];
+            app.PortDropDownLabel.Text = 'Port:';
+
+            % Create PortDropDown
+            app.PortDropDown = uidropdown(app.UIFigure);
+            app.PortDropDown.Items = {'Unknown'};
+            app.PortDropDown.Enable = 'off';
+            app.PortDropDown.FontSize = 14;
+            app.PortDropDown.Position = [75 520 137 22];
+            app.PortDropDown.Value = 'Unknown';
+
+            % Create ConectionStatusLampLabel
+            app.ConectionStatusLampLabel = uilabel(app.UIFigure);
+            app.ConectionStatusLampLabel.FontSize = 14;
+            app.ConectionStatusLampLabel.FontWeight = 'bold';
+            app.ConectionStatusLampLabel.Position = [39 487 125 22];
+            app.ConectionStatusLampLabel.Text = 'Conection Status:';
+
+            % Create ConectionStatusLamp
+            app.ConectionStatusLamp = uilamp(app.UIFigure);
+            app.ConectionStatusLamp.Position = [166 488 20 20];
+            app.ConectionStatusLamp.Color = [1 0 0];
+
+            % Create StatusLabel
+            app.StatusLabel = uilabel(app.UIFigure);
+            app.StatusLabel.FontSize = 14;
+            app.StatusLabel.Position = [190 486 33 22];
+            app.StatusLabel.Text = 'OFF';
+
+            % Create ConnectButton
+            app.ConnectButton = uibutton(app.UIFigure, 'push');
+            app.ConnectButton.ButtonPushedFcn = createCallbackFcn(app, @ConnectButtonPushed, true);
+            app.ConnectButton.FontSize = 14;
+            app.ConnectButton.Enable = 'off';
+            app.ConnectButton.Position = [39 451 178 25];
+            app.ConnectButton.Text = 'Connect';
+
+            % Create ReadDataButton
+            app.ReadDataButton = uibutton(app.UIFigure, 'push');
+            app.ReadDataButton.ButtonPushedFcn = createCallbackFcn(app, @ReadDataButtonPushed, true);
+            app.ReadDataButton.FontSize = 14;
+            app.ReadDataButton.Enable = 'off';
+            app.ReadDataButton.Position = [39 415 178 25];
+            app.ReadDataButton.Text = 'Read Data';
+
+            % Create ReadingVariablesPanel
+            app.ReadingVariablesPanel = uipanel(app.UIFigure);
+            app.ReadingVariablesPanel.AutoResizeChildren = 'off';
+            app.ReadingVariablesPanel.Enable = 'off';
+            app.ReadingVariablesPanel.Title = 'Reading Variables';
+            app.ReadingVariablesPanel.BackgroundColor = [0.902 0.902 0.902];
+            app.ReadingVariablesPanel.FontWeight = 'bold';
+            app.ReadingVariablesPanel.FontSize = 14;
+            app.ReadingVariablesPanel.Position = [32 197 193 208];
+
+            % Create TempAMBCButton
+            app.TempAMBCButton = uibutton(app.ReadingVariablesPanel, 'state');
+            app.TempAMBCButton.VerticalAlignment = 'bottom';
+            app.TempAMBCButton.Text = 'Temp AMB [Cº]';
+            app.TempAMBCButton.BackgroundColor = [0.9882 0.6157 0.6157];
+            app.TempAMBCButton.FontSize = 14;
+            app.TempAMBCButton.Position = [6 151 110 25];
+
+            % Create TempAMBField
+            app.TempAMBField = uieditfield(app.ReadingVariablesPanel, 'numeric');
+            app.TempAMBField.Limits = [-100 100];
+            app.TempAMBField.Position = [120 152 64 22];
+
+            % Create TempINCButton
+            app.TempINCButton = uibutton(app.ReadingVariablesPanel, 'state');
+            app.TempINCButton.VerticalAlignment = 'bottom';
+            app.TempINCButton.Text = 'Temp IN [Cº]';
+            app.TempINCButton.BackgroundColor = [0.9686 0.4549 0.9686];
+            app.TempINCButton.FontSize = 14;
+            app.TempINCButton.Position = [6 117 100 25];
+
+            % Create TempINField
+            app.TempINField = uieditfield(app.ReadingVariablesPanel, 'numeric');
+            app.TempINField.Limits = [-100 100];
+            app.TempINField.Position = [120 118 64 22];
+
+            % Create HUMIButton
+            app.HUMIButton = uibutton(app.ReadingVariablesPanel, 'state');
+            app.HUMIButton.VerticalAlignment = 'bottom';
+            app.HUMIButton.Text = 'Humidity %';
+            app.HUMIButton.BackgroundColor = [0.302 0.7451 0.9333];
+            app.HUMIButton.FontSize = 14;
+            app.HUMIButton.Position = [8 50 86 25];
+
+            % Create humiField
+            app.humiField = uieditfield(app.ReadingVariablesPanel, 'numeric');
+            app.humiField.Limits = [-100 100];
+            app.humiField.Position = [122 51 64 22];
+
+            % Create CurrentButton
+            app.CurrentButton = uibutton(app.ReadingVariablesPanel, 'state');
+            app.CurrentButton.VerticalAlignment = 'bottom';
+            app.CurrentButton.Text = 'Current [A]';
+            app.CurrentButton.BackgroundColor = [0.5255 0.9686 0.5255];
+            app.CurrentButton.FontSize = 14;
+            app.CurrentButton.Position = [7 15 83 25];
+
+            % Create CurrentField
+            app.CurrentField = uieditfield(app.ReadingVariablesPanel, 'numeric');
+            app.CurrentField.Limits = [-100 100];
+            app.CurrentField.Position = [121 16 64 22];
+
+            % Create TempOUTButton_2
+            app.TempOUTButton_2 = uibutton(app.ReadingVariablesPanel, 'state');
+            app.TempOUTButton_2.VerticalAlignment = 'bottom';
+            app.TempOUTButton_2.Text = 'Temp OUT [Cº]';
+            app.TempOUTButton_2.BackgroundColor = [0.502 0.502 0.502];
+            app.TempOUTButton_2.FontSize = 14;
+            app.TempOUTButton_2.Position = [6 84 109 25];
+
+            % Create TemOUTField_2
+            app.TemOUTField_2 = uieditfield(app.ReadingVariablesPanel, 'numeric');
+            app.TemOUTField_2.Limits = [-100 100];
+            app.TemOUTField_2.Position = [120 85 64 22];
+
+            % Create GraphData
+            app.GraphData = uibutton(app.UIFigure, 'state');
+            app.GraphData.ValueChangedFcn = createCallbackFcn(app, @GraphDataValueChanged, true);
+            app.GraphData.Enable = 'off';
+            app.GraphData.Text = 'Graph Data';
+            app.GraphData.FontSize = 14;
+            app.GraphData.Position = [39 164 178 25];
+
+            % Create InputTempCGauge
+            app.InputTempCGauge = uigauge(app.UIFigure, 'semicircular');
+            app.InputTempCGauge.Limits = [10 50];
+            app.InputTempCGauge.Enable = 'off';
+            app.InputTempCGauge.ScaleColors = [0 0.5843 1;0.0588 1 1;0 1 0;1 0.8353 0;1 0 0];
+            app.InputTempCGauge.ScaleColorLimits = [10 15;15 20;20 40;40 45;45 50];
+            app.InputTempCGauge.Position = [34 55 188 102];
+
+            % Create OutputTempCGauge
+            app.OutputTempCGauge = uigauge(app.UIFigure, 'semicircular');
+            app.OutputTempCGauge.Limits = [10 50];
+            app.OutputTempCGauge.Enable = 'off';
+            app.OutputTempCGauge.ScaleColors = [0 0.58 1;0.06 1 1;0 1 0;1 0.84 0;1 0 0];
+            app.OutputTempCGauge.ScaleColorLimits = [10 18;18 26;26 34;34 42;42 50];
+            app.OutputTempCGauge.Position = [247 53 188 102];
+
+            % Create RelativeHumidityGauge
+            app.RelativeHumidityGauge = uigauge(app.UIFigure, 'semicircular');
+            app.RelativeHumidityGauge.Limits = [20 80];
+            app.RelativeHumidityGauge.Enable = 'off';
+            app.RelativeHumidityGauge.ScaleColors = [0 0.58 1;0.06 1 1;0 1 0;1 0.84 0;1 0 0];
+            app.RelativeHumidityGauge.ScaleColorLimits = [20 30;30 40;40 60;60 70;70 80];
+            app.RelativeHumidityGauge.Position = [459 53 188 102];
+
+            % Create CurrentAGauge
+            app.CurrentAGauge = uigauge(app.UIFigure, 'linear');
+            app.CurrentAGauge.Limits = [0 5];
+            app.CurrentAGauge.Enable = 'off';
+            app.CurrentAGauge.ScaleColors = [0 0.58 1;0.06 1 1;0 1 0;1 0.84 0;1 0 0];
+            app.CurrentAGauge.ScaleColorLimits = [0 1;1 2;2 3;3 4;4 5];
+            app.CurrentAGauge.Position = [671 78 248 41];
+
+            % Create CurrentAGaugeLabel
+            app.CurrentAGaugeLabel = uilabel(app.UIFigure);
+            app.CurrentAGaugeLabel.HorizontalAlignment = 'center';
+            app.CurrentAGaugeLabel.FontSize = 14;
+            app.CurrentAGaugeLabel.FontWeight = 'bold';
+            app.CurrentAGaugeLabel.Enable = 'off';
+            app.CurrentAGaugeLabel.Position = [757 53 79 22];
+            app.CurrentAGaugeLabel.Text = 'Current [A]';
+
+            % Create InputTempCGaugeLabel
+            app.InputTempCGaugeLabel = uilabel(app.UIFigure);
+            app.InputTempCGaugeLabel.HorizontalAlignment = 'center';
+            app.InputTempCGaugeLabel.FontSize = 14;
+            app.InputTempCGaugeLabel.FontWeight = 'bold';
+            app.InputTempCGaugeLabel.Enable = 'off';
+            app.InputTempCGaugeLabel.Position = [72 28 112 22];
+            app.InputTempCGaugeLabel.Text = 'Input Temp. [Cº]';
+
+            % Create OutputTempCGaugeLabel
+            app.OutputTempCGaugeLabel = uilabel(app.UIFigure);
+            app.OutputTempCGaugeLabel.HorizontalAlignment = 'center';
+            app.OutputTempCGaugeLabel.FontSize = 14;
+            app.OutputTempCGaugeLabel.FontWeight = 'bold';
+            app.OutputTempCGaugeLabel.Enable = 'off';
+            app.OutputTempCGaugeLabel.Position = [279 28 123 22];
+            app.OutputTempCGaugeLabel.Text = 'Output Temp. [Cº]';
+
+            % Create RelativeHumidityGaugeLabel
+            app.RelativeHumidityGaugeLabel = uilabel(app.UIFigure);
+            app.RelativeHumidityGaugeLabel.HorizontalAlignment = 'center';
+            app.RelativeHumidityGaugeLabel.FontSize = 14;
+            app.RelativeHumidityGaugeLabel.FontWeight = 'bold';
+            app.RelativeHumidityGaugeLabel.Enable = 'off';
+            app.RelativeHumidityGaugeLabel.Position = [480 28 146 22];
+            app.RelativeHumidityGaugeLabel.Text = ' Relative Humidity. %';
+
+            % Create GaugesButton
+            app.GaugesButton = uibutton(app.UIFigure, 'state');
+            app.GaugesButton.ValueChangedFcn = createCallbackFcn(app, @GaugesButtonValueChanged, true);
+            app.GaugesButton.Enable = 'off';
+            app.GaugesButton.Text = 'Gauges';
+            app.GaugesButton.FontSize = 14;
+            app.GaugesButton.Position = [225 165 64 23];
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = Chill2
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
